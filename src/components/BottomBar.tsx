@@ -1,136 +1,154 @@
-import { useState, useCallback, useEffect } from 'react'
-import { api } from '../state/api'
+import { useState, useCallback, useEffect, SetStateAction } from 'react'
 import { marked } from 'marked'
+import {
+  TrashIcon,
+  PencilSquareIcon,
+  RssIcon,
+} from '@heroicons/react/24/outline'
+import { api } from '../state/api'
 import { useStore } from '../state/base'
-import Modal from './Modal'
+import { Publish, ConfirmDeleteDraft, ConfirmUnpublish } from './Modal'
 
 type BottomBarProps = {
-  showPreview: boolean
-  setShowPreview: React.Dispatch<React.SetStateAction<boolean>>
+  disabled: boolean
+  fileName: string
 }
 
-export default function BottomBar({ showPreview, setShowPreview }: BottomBarProps) {
-  const { markdown, pages, activeTheme, allBindings, drafts, themes, getAll, setPreviewCss, setActiveTheme } = useStore()
-  const [fileName, setFileName]           = useState('')
-  const [fileNameError, setFileNameError] = useState('')
-  const [disabled, setDisabled]           = useState(true)
-  const [showModal, setShowModal]         = useState(false)
+export default function BottomBar({ fileName, disabled }: BottomBarProps) {
+  const {
+    markdown,
+    activeTheme,
+    themes,
+    getAll,
+    setPreviewCss,
+    setActiveTheme,
+  } = useStore()
 
-  useEffect(() => {
-    setFileName('/' + document.location.pathname.split('/').slice(4).join('/'))  // TODO ugly
-  }, [document.location.pathname])
+  const [showDeleteDraftModal, setShowDeleteDraftModal] = useState(false)
+  const [showUnpublishModal, setShowUnpublishModal] = useState(false)
+  const [showPublishModal, setShowPublishModal] = useState(false)
 
   useEffect(() => {
     if (themes.length > 0 && activeTheme === '') setActiveTheme(themes[0])
     async function getTheme() {
-      const css = await api.scry({ app : 'blog', path: `/theme/${activeTheme}`})
+      const css = await api.scry({ app: 'blog', path: `/theme/${activeTheme}` })
       setPreviewCss(css)
     }
     getTheme()
   }, [activeTheme, themes])
 
   const handlePublish = useCallback(
-    async (e : React.SyntheticEvent) => {
+    async (e: React.SyntheticEvent) => {
       e.preventDefault()
       await api.poke({
         app: 'blog',
         mark: 'blog-action',
         json: {
-          "publish": {
-            "path": fileName,
-            "html": marked.parse(markdown),
-            "md": markdown,
-            "theme": activeTheme
-      }}})
+          publish: {
+            path: fileName,
+            html: marked.parse(markdown),
+            md: markdown,
+            theme: activeTheme,
+          },
+        },
+      })
       getAll()
-      setShowModal(true)
-  }, [fileName, markdown, activeTheme])
+      setShowPublishModal(true)
+    },
+    [fileName, markdown, activeTheme]
+  )
 
-  const handleSaveDraft = useCallback(
-    async (e : React.SyntheticEvent) => {
-      e.preventDefault()
-      await api.poke({
-        app: 'blog',
-        mark: 'blog-action',
-        json: {
-          "save-draft": {
-            "path": fileName,
-            "md": markdown
-      }}})
-      getAll()
-  },  [fileName, markdown])
+  const handleDeleteDraft = useCallback(async (toDelete: string) => {
+    await api.poke({
+      app: 'blog',
+      mark: 'blog-action',
+      json: {
+        'delete-draft': {
+          path: toDelete,
+        },
+      },
+    })
+    setShowDeleteDraftModal(false)
+    getAll()
+  }, [])
 
-  useEffect(() => {
-    if (fileName.charAt(fileName.length - 1) === '/') {
-      setDisabled(true)
-      setFileNameError(`cannot end in a slash`)
-    } else if (fileName.charAt(0) !== '/'){
-      setDisabled(true)
-      setFileNameError(`must start with a slash`)
-    } else if (allBindings[fileName]) {
-      const inUse = allBindings[fileName]
-      console.log('ue', inUse)
-      if (inUse === 'app: %blog') {
-        setDisabled(false)
-        setFileNameError(`you will overwrite ${fileName}`)
-      } else {
-        setDisabled(true)
-        setFileNameError(`${fileName} is in use by ${inUse}`)
-      }
-    } else if (drafts.includes(fileName)) {
-      setDisabled(false)
-      setFileNameError(`you will overwrite ${fileName}`)
-    } else {
-      setDisabled(false)
-      setFileNameError('')
-    }
-  }, [fileName, pages])
+  const handleUnpublish = useCallback(async (toUnpublish: string) => {
+    await api.poke({
+      app: 'blog',
+      mark: 'blog-action',
+      json: { unpublish: { path: toUnpublish } },
+    })
+    setShowUnpublishModal(false)
+    getAll()
+  }, [])
 
   return (
     <>
-      <div>
-        <code>
-          <input
-            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-            placeholder="/example/path"
-            value={fileName}
-            onChange={e => setFileName(e.target.value)}
-            pattern="^\/.+(?!\/)"
-            required
-          />
-        </code>
-        <p className="text-red-500 text-xs italic">{fileNameError}</p>
+      <div className='w-1/4'>
+        %theme:
+        <select
+          className='rounded border-none focus:outline-none'
+          value={activeTheme}
+          onChange={(e) => setActiveTheme(e.target.value)}
+        >
+          {themes.map((theme, i) => (
+            <option value={theme} key={i}>
+              %{theme}
+            </option>
+          ))}
+        </select>
       </div>
-      <select
-        className="rounded border-none focus:outline-none"
-        value={activeTheme}
-        onChange={(e) => setActiveTheme(e.target.value)}
-      >
-        {themes.map((theme, i) => 
-          <option value={theme} key={i}>%{theme}</option>
-        )}
-      </select>
       <button
-        className="flex-1 bg-blue-500 hover:bg-blue-700 text-white p-2 rounded w-full disabled:opacity-50"
-        disabled={!fileName || disabled}
-        onClick={handleSaveDraft}
+        className='flex-1 flex items-center justify-center text-red-500 hover:text-white hover:bg-red-500 border rounded disabled:opacity-50'
+        disabled={!fileName}
+        onClick={() => {
+          setShowDeleteDraftModal(true)
+        }}
       >
-        <code>%save-draft</code>
+        <div className='w-5 mr-2'>
+          <TrashIcon />
+        </div>
+        <code>delete %blog</code>
       </button>
       <button
-        className="flex-1 bg-blue-500 hover:bg-blue-700 text-white p-2 rounded w-full disabled:opacity-50"
+        className='flex-1 flex items-center justify-center text-white bg-orange-500 hover:bg-orange-700 rounded disabled:opacity-50'
+        disabled={!fileName || disabled}
+        onClick={() => {
+          setShowUnpublishModal(true)
+        }}
+      >
+        <div className='w-5 mr-2'>
+          <PencilSquareIcon />
+        </div>
+        <code>unpublish %blog</code>
+      </button>
+      <button
+        className='flex-1 flex items-center justify-center text-white bg-green-500 hover:bg-green-700 rounded disabled:opacity-50'
         disabled={!fileName || disabled}
         onClick={handlePublish}
       >
-        <code>%publish</code>
+        <div className='w-5 mr-2'>
+          <RssIcon />
+        </div>
+        <code>publish %blog</code>
       </button>
-      <button
-        className={`${showPreview? 'bg-blue-700 shadow-inner shadow' : 'bg-blue-500'} flex-1 text-white p-2 rounded w-full`}
-        onClick={() => setShowPreview(!showPreview)}
-      >
-        <code className="mr-2">{showPreview? '%hide-preview' : '%show-preview'}</code>
-      </button>
-      { showModal && <Modal justPublished={fileName} setShowModal={setShowModal}/>}
+      {showDeleteDraftModal && (
+        <ConfirmDeleteDraft
+          fileName={fileName}
+          setShowModal={setShowDeleteDraftModal}
+          onConfirm={() => handleDeleteDraft(fileName)}
+        />
+      )}
+      {showUnpublishModal && (
+        <ConfirmUnpublish
+          fileName={fileName}
+          setShowModal={setShowUnpublishModal}
+          onConfirm={() => handleUnpublish(fileName)}
+        />
+      )}
+      {showPublishModal && (
+        <Publish fileName={fileName} setShowModal={setShowPublishModal} />
+      )}
     </>
   )
 }
